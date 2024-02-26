@@ -220,6 +220,12 @@ ax.set_xlabel(r'geometric difference $g_{CQ}$')
 
 #%% mean accs and max iter
 
+max_iter = np.array(
+    [[1, 2],
+    [2, 2],
+    [0, 2],
+    [0, 4]])
+
 # nn, N, conv, kk
 all_accs_simu = np.stack([q_accs_simu, c_accs_simu, g_accs_simu, p_accs_simu, l_accs_simu])
 
@@ -251,6 +257,7 @@ for c in [0,1]:
     for k in [0,1,2,3,4]: # choose how many kernels to plot
         # simulation dashed
         l_simu.append( ax[c].errorbar(x=Ns_all[:], 
+                            # y = all_accs_simu[k, :, c, max_iter[:,c]], 
                             y=np.mean(all_accs_simu[k,:,c,:], axis=-1), 
                             yerr=np.std(all_accs_simu[k,:,c,:], axis=-1), 
                             marker=ml[k], c=cl[k],
@@ -260,6 +267,7 @@ for c in [0,1]:
         # exp solid
         if k <2 and PLOT_EXP:
             l_exp.append( ax[c].errorbar(Ns, 
+                                # y=all_accs_exp[k, :, c, max_iter[:,c]],
                                 np.mean(all_accs_exp[k,:,c,:], axis=-1),
                                 yerr=np.std(all_accs_exp[k,:,c,:], axis=-1), 
                                 marker=ml[k], c=cl[k],
