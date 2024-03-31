@@ -11,7 +11,7 @@ from scipy.linalg import inv, eigh
 import matplotlib.pyplot as plt
 from cycler import cycler
 
-cl = ['#0055ff', '#ff5500', 'grey', 'orange', 'violet']
+cl = ['#0055ff', '#ff5500', 'grey', 'orange', 'violet', 'green']
 plt.rcParams.update({    
     # 'figure.max_open_warning': 0,
     # 'figure.subplot.hspace': 0,
@@ -277,11 +277,26 @@ for key in list(simulation_list.keys())[:]:
                                                               y_train, diag_reg=1e-4)
         y_g, cov = predict_fn(x_test=X_test, get='ntk', compute_cov=True)
         acc_test = accuracy_score(y_test, jnp.sign(y_g))
-        print(acc_test)
+        # print(acc_test)
         nkt_accs.append(acc_test)
 
-
 nkt_accs = np.array(nkt_accs).reshape(9,2,5)
+
+#%% plot loss function in NTK
+ts = jnp.arange(0, 10 ** 3, 10 ** -1)
+ntk_train_loss_mean = loss_fn(predict_fn, y_train, ts)
+ntk_test_loss_mean = loss_fn(predict_fn, y_test, ts, X_test)
+
+plt.subplot(1, 2, 1)
+
+plt.loglog(ts, ntk_train_loss_mean, linewidth=3)
+plt.loglog(ts, ntk_test_loss_mean, linewidth=3)
+
+plt.xlabel('step')
+plt.ylabel('loss')
+plt.legend(['Infinite Train', 'Infinite Test'])
+
+plt.tight_layout()
 
 #%% mean accs and max iter
 
