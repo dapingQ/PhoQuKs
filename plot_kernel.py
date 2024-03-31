@@ -218,6 +218,71 @@ ax.legend([l1, l2],
 ax.set_ylabel('accuracy')
 ax.set_xlabel(r'geometric difference $g_{CQ}$')
 
+#%% benchmark with NTK
+
+import jax.numpy as jnp
+
+from jax import random
+from jax.example_libraries import optimizers
+from jax import jit, grad, vmap
+
+import functools
+
+import neural_tangents as nt
+from neural_tangents import stax
+import pathlib
+
+def loss_fn(predict_fn, ys, t, xs=None):
+  mean, cov = predict_fn(t=t, get='ntk', x_test=xs, compute_cov=True)
+  mean = jnp.reshape(mean, mean.shape[:1] + (-1,))
+  var = jnp.diagonal(cov, axis1=1, axis2=2)
+  ys = jnp.reshape(ys, (1, -1))
+
+  mean_predictions = 0.5 * jnp.mean(ys ** 2 - 2 * mean * ys + var + mean ** 2,
+                                   axis=1)
+
+  return mean_predictions
+
+nkt_accs = []
+for key in list(simulation_list.keys())[:]:
+    N, conv = key
+    data  = simulation_list[key]
+    print(N, conv)
+
+    for nn in range(5):
+        
+        Xs = data['Xs'][nn]
+        y = data['ys'][nn]
+
+        y_labels = [1 if z > jnp.mean(y) else -1 for z in y]
+
+        X_train, X_test, y_train, y_test = train_test_split(Xs, y_labels, test_size=1/3, random_state=42)
+
+        X_train = jnp.array(X_train)
+        y_train = jnp.array(y_train)
+        X_test = jnp.array(X_test)
+        y_test = jnp.array(y_test)
+
+        y_test = jnp.reshape(y_test, (-1,1))
+        y_train = jnp.reshape(y_train, (-1,1))
+
+        init_fn, apply_fn, kernel_fn = stax.serial(
+            stax.Dense(30, W_std=1.5, b_std=0.05), 
+            stax.Erf(),
+            stax.Dense(30, W_std=1.5, b_std=0.05), 
+            stax.Erf(),
+        )
+
+        predict_fn = nt.predict.gradient_descent_mse_ensemble(kernel_fn, X_train, 
+                                                              y_train, diag_reg=1e-4)
+        y_g, cov = predict_fn(x_test=X_test, get='ntk', compute_cov=True)
+        acc_test = accuracy_score(y_test, jnp.sign(y_g))
+        print(acc_test)
+        nkt_accs.append(acc_test)
+
+
+nkt_accs = np.array(nkt_accs).reshape(9,2,5)
+
 #%% mean accs and max iter
 
 max_iter = np.array(
@@ -227,62 +292,57 @@ max_iter = np.array(
     [0, 4]])
 
 # nn, N, conv, kk
-all_accs_simu = np.stack([q_accs_simu, c_accs_simu, g_accs_simu, p_accs_simu, l_accs_simu])
+all_accs_simu = np.stack([q_accs_simu, c_accs_simu, 
+                          g_accs_simu, p_accs_simu, 
+                          l_accs_simu, nkt_accs])
 
 all_accs_exp = np.stack([q_exp_accs, c_exp_accs])
-ml = 'ov^<>'
-
-fig, ax = plt.subplots(2, 1, figsize=(4,3), sharex=True)
+ml = 'ov^<>*'
+cl = ['#0055ff', '#ff5500', 'grey', 'orange', 'violet', 'green']
+fig, ax = plt.subplots(2, 1, figsize=(5,5), sharex=True)
 
 arg_simu = {
+    'capsize': 2,
     'linestyle': '--', 
     'linewidth':1.2, 
     'alpha':.5,
-    'markeredgewidth': 0,
-    'markersize': 6
 }
 
 arg_exp = {
-    'linestyle': '-', 
+    'capsize': 2,
     'linewidth':1.5, 
-    'markeredgewidth': 0,
-    'markersize': 6
 }
-
 PLOT_EXP = True
 
 for c in [0,1]:
     l_simu =[]
     l_exp = []
-    for k in [0,1,2,3,4]: # choose how many kernels to plot
+    for k in [0,1,2,3,4,5]:
         # simulation dashed
-        l_simu.append( ax[c].errorbar(x=Ns_all[:], 
-                            # y = all_accs_simu[k, :, c, max_iter[:,c]], 
-                            y=np.mean(all_accs_simu[k,:,c,:], axis=-1), 
-                            yerr=np.std(all_accs_simu[k,:,c,:], axis=-1), 
+        l_simu.append( ax[c].errorbar(x=Ns_all[:4], 
+                            y=np.mean(all_accs_simu[k,:4,c,:], axis=-1), 
+                            yerr=np.std(all_accs_simu[k,:4,c,:], axis=-1), 
                             marker=ml[k], c=cl[k],
-                            # **arg_simu,
-                            **arg_exp,
+                            **arg_simu,
                             ) )
         # exp solid
         if k <2 and PLOT_EXP:
             l_exp.append( ax[c].errorbar(Ns, 
-                                # y=all_accs_exp[k, :, c, max_iter[:,c]],
                                 np.mean(all_accs_exp[k,:,c,:], axis=-1),
                                 yerr=np.std(all_accs_exp[k,:,c,:], axis=-1), 
                                 marker=ml[k], c=cl[k],
                                 **arg_exp) )
-        ax[c].set_ylim(top=.9, bottom=0.4)
-        # random guessing
-        ax[c].plot([40, 200], [.5]*2, '--', lw=1, c='black')
 
+ax[0].set_xlabel('dataset size N')
 ax[1].set_xlabel('dataset size N')
+
 ax[0].legend(l_simu+l_exp,
-             ['quantum', 'classical', 'gaussian', 'polynomial', 'linear'] + ['quantum exp.','classical exp.'], 
-             ncol=3, frameon=False, bbox_to_anchor=(0, 1),
+              ['quantum', 'coherent', 'gaussian', 
+               'polynomial', 'linear', 'ntk'] 
+               + ['quantum exp.','coherent exp.'], 
+             ncol=4, frameon=False, bbox_to_anchor=(0, 1),
               loc='lower left', columnspacing=0.3
               )
-
 
 #%%
 # single figure 
